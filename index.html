@@ -1,0 +1,1086 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+<title>Slicing Line Downtime</title>
+<style>
+  :root {
+    --bg: #0f1117;
+    --surface: #1a1d27;
+    --surface2: #22263a;
+    --surface3: #2a2f47;
+    --border: rgba(255,255,255,0.08);
+    --border2: rgba(255,255,255,0.14);
+    --text: #f0f2ff;
+    --text2: #9098b8;
+    --text3: #5a6280;
+    --accent: #4f7fff;
+    --accent-bg: rgba(79,127,255,0.12);
+    --accent-border: rgba(79,127,255,0.35);
+    --red: #ff4d4d;
+    --red-bg: rgba(255,77,77,0.12);
+    --red-border: rgba(255,77,77,0.3);
+    --green: #3dd68c;
+    --green-bg: rgba(61,214,140,0.12);
+    --green-border: rgba(61,214,140,0.3);
+    --amber: #f59e0b;
+    --amber-bg: rgba(245,158,11,0.12);
+    --amber-border: rgba(245,158,11,0.3);
+    --purple: #a78bfa;
+    --purple-bg: rgba(167,139,250,0.12);
+    --purple-border: rgba(167,139,250,0.3);
+    --radius: 12px;
+    --radius-sm: 8px;
+  }
+  * { box-sizing: border-box; margin: 0; padding: 0; -webkit-tap-highlight-color: transparent; }
+  body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif; background: var(--bg); color: var(--text); min-height: 100vh; overflow-x: hidden; font-size: 16px; }
+  .app { display: flex; flex-direction: column; height: 100vh; max-width: 900px; margin: 0 auto; }
+
+  /* Header */
+  .header { display: flex; align-items: center; justify-content: space-between; padding: 14px 20px; border-bottom: 1px solid var(--border); background: var(--surface); flex-shrink: 0; }
+  .header-left { display: flex; align-items: center; gap: 10px; }
+  .logo { width: 36px; height: 36px; background: var(--accent); border-radius: 10px; display: flex; align-items: center; justify-content: center; font-size: 18px; }
+  .header-title { font-size: 15px; font-weight: 600; }
+  .header-sub { font-size: 12px; color: var(--text2); margin-top: 1px; }
+  .shift-badge { font-size: 11px; font-weight: 600; padding: 4px 10px; border-radius: 20px; background: var(--accent-bg); color: var(--accent); border: 1px solid var(--accent-border); }
+
+  /* Screens */
+  .screen { display: none; flex: 1; overflow-y: auto; padding: 20px; flex-direction: column; }
+  .screen.active { display: flex; }
+
+  /* Nav */
+  .nav { display: flex; border-top: 1px solid var(--border); background: var(--surface); flex-shrink: 0; }
+  .nav-btn { flex: 1; padding: 12px 4px 10px; display: flex; flex-direction: column; align-items: center; gap: 3px; font-size: 10px; font-weight: 500; color: var(--text3); cursor: pointer; transition: color 0.15s; border: none; background: none; letter-spacing: 0.02em; text-transform: uppercase; }
+  .nav-btn svg { width: 22px; height: 22px; stroke: currentColor; fill: none; stroke-width: 1.75; stroke-linecap: round; stroke-linejoin: round; }
+  .nav-btn.active { color: var(--accent); }
+
+  /* Buttons */
+  .btn { width: 100%; padding: 16px; border-radius: var(--radius); border: none; font-size: 15px; font-weight: 600; cursor: pointer; transition: opacity 0.15s, transform 0.1s; display: flex; align-items: center; justify-content: center; gap: 8px; }
+  .btn:active { transform: scale(0.98); opacity: 0.9; }
+  .btn-primary { background: var(--accent); color: #fff; }
+  .btn-danger { background: var(--red); color: #fff; }
+  .btn-success { background: var(--green); color: #0a2a1a; }
+  .btn-ghost { background: var(--surface2); color: var(--text); border: 1px solid var(--border2); }
+  .btn-amber { background: var(--amber); color: #1a0f00; }
+  .btn-sm { padding: 10px 14px; font-size: 13px; width: auto; }
+  .btn:disabled { opacity: 0.35; pointer-events: none; }
+  .btn + .btn { margin-top: 10px; }
+
+  /* Status */
+  .status { display: inline-flex; align-items: center; gap: 5px; font-size: 12px; font-weight: 600; padding: 4px 10px; border-radius: 20px; }
+  .status-running { background: var(--green-bg); color: var(--green); border: 1px solid var(--green-border); }
+  .status-down { background: var(--red-bg); color: var(--red); border: 1px solid var(--red-border); }
+  .dot { width: 7px; height: 7px; border-radius: 50%; background: currentColor; }
+
+  /* QR Zone */
+  .qr-zone { border: 2px dashed var(--border2); border-radius: var(--radius); height: 200px; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 12px; margin-bottom: 16px; cursor: pointer; transition: border-color 0.2s, background 0.2s; position: relative; overflow: hidden; }
+  .qr-zone:hover, .qr-zone.scanning { border-color: var(--accent); background: var(--accent-bg); }
+  .qr-zone.success { border-color: var(--green); background: var(--green-bg); }
+  .qr-zone.error { border-color: var(--amber); background: var(--amber-bg); }
+  .qr-label { font-size: 14px; color: var(--text2); text-align: center; line-height: 1.5; }
+  .qr-sublabel { font-size: 12px; color: var(--text3); }
+  .scan-line { position: absolute; left: 10%; right: 10%; height: 2px; background: var(--accent); display: none; animation: scanMove 1.5s ease-in-out infinite; }
+  .qr-zone.scanning .scan-line { display: block; }
+  @keyframes scanMove { 0% { top: 15%; } 100% { top: 85%; } }
+
+  /* ── Time picker clocks ── */
+  .time-pickers { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; margin-bottom: 18px; }
+  .time-card {
+    background: var(--surface2); border: 1px solid var(--border2);
+    border-radius: var(--radius); padding: 14px 12px; text-align: center;
+    cursor: pointer; transition: border-color 0.15s;
+  }
+  .time-card.stopped { border-color: var(--red-border); }
+  .time-card.restarted { border-color: var(--green-border); }
+  .time-card-label {
+    font-size: 10px; font-weight: 700; text-transform: uppercase;
+    letter-spacing: 0.07em; margin-bottom: 10px;
+  }
+  .time-card.stopped .time-card-label { color: var(--red); }
+  .time-card.restarted .time-card-label { color: var(--green); }
+  .clock-face {
+    display: flex; align-items: center; justify-content: center; gap: 2px;
+    margin-bottom: 10px;
+  }
+  .clock-col { display: flex; flex-direction: column; align-items: center; gap: 4px; }
+  .clock-up, .clock-down {
+    width: 100%; background: var(--surface3); border: none; border-radius: 6px;
+    color: var(--text2); font-size: 18px; cursor: pointer; padding: 4px 0;
+    transition: background 0.12s, color 0.12s; line-height: 1;
+  }
+  .clock-up:active, .clock-down:active { background: var(--accent-bg); color: var(--accent); }
+  .clock-digits {
+    font-size: 32px; font-weight: 700; font-variant-numeric: tabular-nums;
+    min-width: 52px; text-align: center; letter-spacing: 1px;
+    border-bottom: 2px solid var(--border2); padding-bottom: 4px;
+  }
+  .stopped .clock-digits { color: var(--red); border-color: var(--red-border); }
+  .restarted .clock-digits { color: var(--green); border-color: var(--green-border); }
+  .clock-sep { font-size: 28px; font-weight: 700; color: var(--text3); padding: 0 2px; margin-top: -8px; }
+  .time-card-sub { font-size: 11px; color: var(--text3); }
+  .time-card.has-time .time-card-sub { color: var(--text2); }
+
+  /* Duration display */
+  .duration-display {
+    background: var(--surface); border: 1px solid var(--border);
+    border-radius: var(--radius-sm); padding: 10px 14px;
+    display: flex; align-items: center; justify-content: space-between;
+    margin-bottom: 16px;
+  }
+  .duration-label { font-size: 12px; color: var(--text3); text-transform: uppercase; letter-spacing: 0.05em; }
+  .duration-value { font-size: 18px; font-weight: 700; color: var(--amber); }
+
+  /* Reason grid */
+  .reason-section { margin-bottom: 14px; }
+  .reason-section-label { font-size: 10px; font-weight: 700; color: var(--text3); text-transform: uppercase; letter-spacing: 0.08em; margin-bottom: 8px; display: flex; align-items: center; gap: 6px; }
+  .reason-section-label::before { content: ''; display: inline-block; width: 8px; height: 8px; border-radius: 50%; }
+  .reason-section.planned .reason-section-label::before { background: var(--accent); }
+  .reason-section.unplanned .reason-section-label::before { background: var(--red); }
+  .reason-section.quality .reason-section-label::before { background: var(--amber); }
+  .reason-section.operational .reason-section-label::before { background: var(--purple); }
+  .reason-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; }
+  .reason-btn { background: var(--surface2); border: 1px solid var(--border); border-radius: var(--radius-sm); padding: 12px 10px; font-size: 13px; font-weight: 500; color: var(--text2); cursor: pointer; text-align: center; transition: all 0.15s; line-height: 1.3; }
+  .reason-btn:hover { border-color: var(--border2); color: var(--text); }
+  .reason-btn.selected { border-color: var(--accent); background: var(--accent-bg); color: var(--accent); font-weight: 600; }
+  .reason-btn.selected.unplanned { border-color: var(--red); background: var(--red-bg); color: var(--red); }
+  .reason-btn.selected.quality { border-color: var(--amber); background: var(--amber-bg); color: var(--amber); }
+  .reason-btn.selected.operational { border-color: var(--purple); background: var(--purple-bg); color: var(--purple); }
+
+  /* Action row at bottom of downtime screen */
+  .downtime-actions { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; margin-top: 18px; margin-bottom: 8px; }
+  .btn-save { background: var(--green); color: #0a2a1a; font-size: 15px; font-weight: 700; padding: 18px; border-radius: var(--radius); border: none; cursor: pointer; display: flex; align-items: center; justify-content: center; gap: 8px; transition: opacity 0.15s, transform 0.1s; }
+  .btn-save:active { transform: scale(0.97); }
+  .btn-save:disabled { opacity: 0.3; pointer-events: none; }
+  .btn-end-session { background: var(--surface2); color: var(--red); font-size: 14px; font-weight: 600; padding: 18px; border-radius: var(--radius); border: 1px solid var(--red-border); cursor: pointer; display: flex; align-items: center; justify-content: center; gap: 8px; transition: all 0.15s; }
+  .btn-end-session:active { transform: scale(0.97); }
+
+  /* Log entries */
+  .log-entry { background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius-sm); padding: 14px 16px; margin-bottom: 8px; display: flex; align-items: flex-start; gap: 12px; }
+  .log-dot { width: 10px; height: 10px; border-radius: 50%; margin-top: 4px; flex-shrink: 0; }
+  .log-dot.planned { background: var(--accent); }
+  .log-dot.unplanned { background: var(--red); }
+  .log-dot.quality { background: var(--amber); }
+  .log-dot.operational { background: var(--purple); }
+  .log-name { font-size: 14px; font-weight: 600; }
+  .log-meta { font-size: 12px; color: var(--text2); margin-top: 3px; }
+  .log-notes { font-size: 12px; color: var(--text3); margin-top: 4px; font-style: italic; }
+  .log-duration { margin-left: auto; font-size: 13px; font-weight: 700; flex-shrink: 0; background: var(--surface2); padding: 3px 9px; border-radius: 20px; white-space: nowrap; }
+
+  /* Stats */
+  .stat-row { display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 8px; margin-bottom: 16px; }
+  .stat-card { background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius-sm); padding: 12px 14px; }
+  .stat-label { font-size: 10px; color: var(--text3); text-transform: uppercase; letter-spacing: 0.05em; }
+  .stat-value { font-size: 22px; font-weight: 700; margin-top: 2px; }
+
+  /* Form */
+  .field-label { font-size: 12px; font-weight: 600; color: var(--text2); margin-bottom: 6px; text-transform: uppercase; letter-spacing: 0.05em; }
+  textarea, input[type="text"], input[type="password"] { width: 100%; background: var(--surface2); border: 1px solid var(--border2); border-radius: var(--radius-sm); padding: 12px 14px; color: var(--text); font-size: 14px; font-family: inherit; resize: none; outline: none; }
+  textarea:focus, input[type="text"]:focus, input[type="password"]:focus { border-color: var(--accent); }
+  textarea { height: 70px; }
+
+  /* Section head */
+  .section-head { font-size: 11px; font-weight: 700; color: var(--text3); text-transform: uppercase; letter-spacing: 0.07em; margin: 20px 0 10px; display: flex; align-items: center; gap: 8px; }
+  .section-head::after { content: ''; flex: 1; height: 1px; background: var(--border); }
+  .divider { height: 1px; background: var(--border); margin: 14px 0; }
+
+  /* List options */
+  .list-option { background: var(--surface2); border: 1px solid var(--border); border-radius: var(--radius-sm); padding: 14px 16px; margin-bottom: 8px; cursor: pointer; display: flex; align-items: center; justify-content: space-between; transition: all 0.15s; }
+  .list-option:hover { border-color: var(--border2); }
+  .list-option.selected { border-color: var(--accent); background: var(--accent-bg); }
+  .list-option-name { font-size: 15px; font-weight: 600; }
+  .list-option-sub { font-size: 12px; color: var(--text2); margin-top: 2px; }
+  .list-check { color: var(--accent); font-size: 18px; display: none; }
+  .list-option.selected .list-check { display: block; }
+
+  /* Manual entry */
+  .manual-entry { background: var(--surface2); border: 1px solid var(--amber-border); border-radius: var(--radius); padding: 16px 18px; margin-bottom: 16px; }
+  .manual-entry-title { font-size: 13px; font-weight: 600; color: var(--amber); margin-bottom: 10px; }
+
+  /* Empty */
+  .empty { text-align: center; padding: 40px 20px; color: var(--text3); }
+  .empty-icon { font-size: 40px; margin-bottom: 12px; }
+  .empty-title { font-size: 15px; font-weight: 600; color: var(--text2); margin-bottom: 6px; }
+  .empty-sub { font-size: 13px; line-height: 1.5; }
+
+  .page-title { font-size: 20px; font-weight: 700; margin-bottom: 4px; }
+  .page-sub { font-size: 13px; color: var(--text2); margin-bottom: 20px; }
+  .back-btn { display: inline-flex; align-items: center; gap: 6px; font-size: 13px; color: var(--text2); cursor: pointer; margin-bottom: 16px; background: none; border: none; padding: 0; }
+  .back-btn:hover { color: var(--text); }
+  .code-badge { font-size: 10px; font-weight: 700; padding: 2px 7px; border-radius: 4px; background: var(--surface3); color: var(--text3); margin-right: 6px; }
+  .operator-chip { display: inline-flex; align-items: center; gap: 6px; background: var(--surface2); border: 1px solid var(--border2); border-radius: 20px; padding: 4px 12px 4px 8px; font-size: 12px; font-weight: 500; }
+  .operator-avatar { width: 22px; height: 22px; border-radius: 50%; background: var(--accent); color: #fff; display: flex; align-items: center; justify-content: center; font-size: 10px; font-weight: 700; }
+
+  /* Toast */
+  .toast { position: fixed; bottom: 80px; left: 50%; transform: translateX(-50%) translateY(20px); background: var(--surface); border: 1px solid var(--green-border); color: var(--green); padding: 10px 20px; border-radius: 20px; font-size: 13px; font-weight: 600; opacity: 0; transition: opacity 0.2s, transform 0.2s; pointer-events: none; z-index: 99; white-space: nowrap; }
+  .toast.show { opacity: 1; transform: translateX(-50%) translateY(0); }
+  .toast.error { border-color: var(--red-border); color: var(--red); }
+
+  /* PIN */
+  .pin-display { display: flex; justify-content: center; gap: 12px; margin: 20px 0; }
+  .pin-dot { width: 16px; height: 16px; border-radius: 50%; border: 2px solid var(--border2); transition: background 0.15s, border-color 0.15s; }
+  .pin-dot.filled { background: var(--accent); border-color: var(--accent); }
+  .pin-pad { display: grid; grid-template-columns: repeat(3, 1fr); gap: 10px; max-width: 280px; margin: 0 auto; }
+  .pin-key { background: var(--surface2); border: 1px solid var(--border2); border-radius: var(--radius-sm); padding: 18px; font-size: 20px; font-weight: 600; cursor: pointer; text-align: center; transition: all 0.12s; user-select: none; }
+  .pin-key:active { transform: scale(0.93); background: var(--surface3); }
+  .pin-key.del { font-size: 16px; color: var(--text2); }
+
+  /* Admin */
+  .admin-item { background: var(--surface2); border: 1px solid var(--border); border-radius: var(--radius-sm); padding: 12px 16px; margin-bottom: 8px; display: flex; align-items: center; justify-content: space-between; }
+  .admin-item-name { font-size: 14px; font-weight: 600; }
+  .admin-item-sub { font-size: 12px; color: var(--text2); margin-top: 2px; }
+  .icon-btn { background: none; border: 1px solid var(--border2); border-radius: 6px; padding: 6px 10px; cursor: pointer; font-size: 14px; color: var(--text2); }
+  .icon-btn:hover { border-color: var(--red-border); color: var(--red); }
+  .add-form { background: var(--surface2); border: 1px solid var(--accent-border); border-radius: var(--radius); padding: 14px 16px; margin-bottom: 12px; }
+  .add-form-title { font-size: 13px; font-weight: 600; color: var(--accent); margin-bottom: 10px; }
+  .inline-row { display: flex; gap: 8px; align-items: flex-end; }
+  .inline-row input { flex: 1; }
+  .inline-row .btn { width: auto; padding: 12px 16px; }
+
+  @media (min-width: 600px) {
+    .reason-grid { grid-template-columns: 1fr 1fr 1fr; }
+    .stat-row { grid-template-columns: repeat(4, 1fr); }
+  }
+</style>
+</head>
+<body>
+<div class="app">
+
+  <!-- Header -->
+  <div class="header">
+    <div class="header-left">
+      <div class="logo">🔪</div>
+      <div>
+        <div class="header-title" id="header-title">Slicing Downtime</div>
+        <div class="header-sub" id="header-sub">Scan to begin</div>
+      </div>
+    </div>
+    <div class="shift-badge" id="shift-badge">—</div>
+  </div>
+
+  <!-- SCREEN 1: Scan Badge -->
+  <div class="screen active" id="screen-badge">
+    <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:4px;">
+      <div class="page-title">Good <span id="greeting-time"></span> 👋</div>
+      <button class="btn btn-ghost btn-sm" onclick="openAdmin()" style="font-size:12px;">⚙ Admin</button>
+    </div>
+    <div class="page-sub" id="scan-date"></div>
+    <div class="qr-zone" id="qr-badge-zone" onclick="simulateBadgeScan()">
+      <div class="scan-line"></div>
+      <div style="font-size:52px;">🪪</div>
+      <div class="qr-label">Tap to scan your operator badge</div>
+      <div class="qr-sublabel">Hold QR code in front of camera</div>
+    </div>
+    <div class="manual-entry" id="manual-name-entry" style="display:none">
+      <div class="manual-entry-title">⚠️ Badge not recognised — enter your name</div>
+      <div class="field-label">Full name</div>
+      <input type="text" id="manual-name-input" placeholder="e.g. Jane Smith" />
+      <button class="btn btn-ghost" style="margin-top:10px;" onclick="confirmManualName()">Continue →</button>
+    </div>
+    <div class="section-head">Or select manually</div>
+    <div id="operator-list"></div>
+  </div>
+
+  <!-- SCREEN 2: Scan Line -->
+  <div class="screen" id="screen-line">
+    <button class="back-btn" onclick="goTo('screen-badge')">← Back</button>
+    <div style="display:flex;align-items:center;gap:10px;margin-bottom:20px;">
+      <div class="operator-chip">
+        <div class="operator-avatar" id="op-avatar-line">--</div>
+        <span id="op-name-line">Operator</span>
+      </div>
+    </div>
+    <div class="page-title">Scan your line QR</div>
+    <div class="page-sub">Each slicing line has a shift QR code posted on it</div>
+    <div class="qr-zone" id="qr-line-zone" onclick="simulateLineScan()">
+      <div class="scan-line"></div>
+      <div style="font-size:52px;">📋</div>
+      <div class="qr-label">Tap to scan the line QR code</div>
+      <div class="qr-sublabel">QR codes are posted at each slicing line</div>
+    </div>
+    <div class="section-head">Or select manually</div>
+    <div class="section-head" style="margin-top:4px;margin-bottom:6px;font-size:10px;color:var(--accent);">Ham lines</div>
+    <div id="line-list-ham"></div>
+    <div class="section-head" style="margin-top:12px;margin-bottom:6px;font-size:10px;color:var(--amber);">Bacon lines</div>
+    <div id="line-list-bacon"></div>
+    <button class="btn btn-primary" id="confirm-line-btn" style="margin-top:16px;" onclick="confirmLine()" disabled>Confirm line →</button>
+  </div>
+
+  <!-- SCREEN 3: Dashboard -->
+  <div class="screen" id="screen-home">
+    <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:6px;">
+      <div>
+        <div class="page-title" id="dash-line-name">—</div>
+        <div class="page-sub" id="dash-line-status"></div>
+      </div>
+      <span class="status status-running" id="line-status-badge"><span class="dot"></span> Running</span>
+    </div>
+    <div class="stat-row">
+      <div class="stat-card"><div class="stat-label">Events</div><div class="stat-value" id="stat-events">0</div></div>
+      <div class="stat-card"><div class="stat-label">Downtime</div><div class="stat-value" style="font-size:18px;padding-top:2px;" id="stat-total">0m</div></div>
+      <div class="stat-card"><div class="stat-label">Last event</div><div class="stat-value" style="font-size:14px;padding-top:6px;" id="stat-last">—</div></div>
+    </div>
+    <button class="btn btn-danger" onclick="startDowntime()">⏸ Log downtime now</button>
+    <div class="section-head">Today's events</div>
+    <div id="dash-log-list">
+      <div class="empty"><div class="empty-icon">✅</div><div class="empty-title">No downtime events yet</div><div class="empty-sub">Tap "Log downtime now" when the line stops</div></div>
+    </div>
+  </div>
+
+  <!-- SCREEN 4: Log Downtime -->
+  <div class="screen" id="screen-downtime">
+
+    <!-- Two clocks: stopped / restarted -->
+    <div class="field-label" style="margin-bottom:10px;">When did the line stop and restart?</div>
+    <div class="time-pickers">
+
+      <!-- Stopped clock -->
+      <div class="time-card stopped">
+        <div class="time-card-label">⏸ Line stopped</div>
+        <div class="clock-face">
+          <div class="clock-col">
+            <button class="clock-up" onclick="adjustTime('stop','h',1)">▲</button>
+            <div class="clock-digits stopped" id="stop-h">--</div>
+            <button class="clock-down" onclick="adjustTime('stop','h',-1)">▼</button>
+          </div>
+          <div class="clock-sep">:</div>
+          <div class="clock-col">
+            <button class="clock-up" onclick="adjustTime('stop','m',1)">▲</button>
+            <div class="clock-digits stopped" id="stop-m">--</div>
+            <button class="clock-down" onclick="adjustTime('stop','m',-1)">▼</button>
+          </div>
+        </div>
+        <div class="time-card-sub" id="stop-sub">Tap ▲▼ to set time</div>
+      </div>
+
+      <!-- Restarted clock -->
+      <div class="time-card restarted">
+        <div class="time-card-label">▶ Line restarted</div>
+        <div class="clock-face">
+          <div class="clock-col">
+            <button class="clock-up" onclick="adjustTime('restart','h',1)">▲</button>
+            <div class="clock-digits restarted" id="restart-h">--</div>
+            <button class="clock-down" onclick="adjustTime('restart','h',-1)">▼</button>
+          </div>
+          <div class="clock-sep">:</div>
+          <div class="clock-col">
+            <button class="clock-up" onclick="adjustTime('restart','m',1)">▲</button>
+            <div class="clock-digits restarted" id="restart-m">--</div>
+            <button class="clock-down" onclick="adjustTime('restart','m',-1)">▼</button>
+          </div>
+        </div>
+        <div class="time-card-sub" id="restart-sub">Tap ▲▼ to set time</div>
+      </div>
+    </div>
+
+    <!-- Calculated duration -->
+    <div class="duration-display">
+      <div class="duration-label">Calculated downtime</div>
+      <div class="duration-value" id="duration-value">— min</div>
+    </div>
+
+    <!-- Reason -->
+    <div class="field-label">Select downtime reason</div>
+    <div class="reason-section planned">
+      <div class="reason-section-label">Planned</div>
+      <div class="reason-grid" id="reason-planned"></div>
+    </div>
+    <div class="reason-section unplanned">
+      <div class="reason-section-label">Unplanned</div>
+      <div class="reason-grid" id="reason-unplanned"></div>
+    </div>
+    <div class="reason-section quality">
+      <div class="reason-section-label">Quality</div>
+      <div class="reason-grid" id="reason-quality"></div>
+    </div>
+    <div class="reason-section operational">
+      <div class="reason-section-label">Operational</div>
+      <div class="reason-grid" id="reason-operational"></div>
+    </div>
+
+    <div class="divider"></div>
+    <div class="field-label">Notes (optional)</div>
+    <textarea id="downtime-notes" placeholder="Describe the issue, e.g. motor fault on conveyor belt…"></textarea>
+
+    <!-- Action buttons -->
+    <div class="downtime-actions">
+      <button class="btn-save" id="resolve-btn" onclick="resolveDowntime()" disabled>✓ Save event</button>
+      <button class="btn-end-session" onclick="endSession()">✕ End session</button>
+    </div>
+    <div style="height:10px;"></div>
+  </div>
+
+  <!-- SCREEN 5: Full Log -->
+  <div class="screen" id="screen-log">
+    <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:16px;">
+      <div>
+        <div class="page-title">Event log</div>
+        <div class="page-sub" id="log-sub">Today's shift</div>
+      </div>
+      <button class="btn btn-ghost btn-sm" onclick="exportLog()">Export CSV</button>
+    </div>
+    <div id="full-log-list">
+      <div class="empty"><div class="empty-icon">📋</div><div class="empty-title">No events yet</div><div class="empty-sub">Events will appear here as they're logged</div></div>
+    </div>
+  </div>
+
+  <!-- SCREEN 6: Admin PIN -->
+  <div class="screen" id="screen-pin">
+    <button class="back-btn" onclick="goTo(session.adminReturnScreen || 'screen-badge')">← Back</button>
+    <div style="text-align:center;margin-bottom:10px;">
+      <div style="font-size:32px;margin-bottom:8px;">🔐</div>
+      <div class="page-title" style="margin-bottom:4px;">Admin access</div>
+      <div style="font-size:13px;color:var(--text2);">Enter supervisor PIN to continue</div>
+    </div>
+    <div class="pin-display" id="pin-display">
+      <div class="pin-dot" id="pd0"></div><div class="pin-dot" id="pd1"></div>
+      <div class="pin-dot" id="pd2"></div><div class="pin-dot" id="pd3"></div>
+    </div>
+    <div id="pin-error" style="text-align:center;font-size:13px;color:var(--red);height:18px;margin-bottom:10px;"></div>
+    <div class="pin-pad">
+      <div class="pin-key" onclick="pinKey('1')">1</div><div class="pin-key" onclick="pinKey('2')">2</div><div class="pin-key" onclick="pinKey('3')">3</div>
+      <div class="pin-key" onclick="pinKey('4')">4</div><div class="pin-key" onclick="pinKey('5')">5</div><div class="pin-key" onclick="pinKey('6')">6</div>
+      <div class="pin-key" onclick="pinKey('7')">7</div><div class="pin-key" onclick="pinKey('8')">8</div><div class="pin-key" onclick="pinKey('9')">9</div>
+      <div class="pin-key del" onclick="pinDel()">⌫</div><div class="pin-key" onclick="pinKey('0')">0</div><div class="pin-key del" onclick="pinClear()" style="font-size:13px;">CLR</div>
+    </div>
+  </div>
+
+  <!-- SCREEN 7: Admin Panel -->
+  <div class="screen" id="screen-admin">
+    <button class="back-btn" onclick="goTo(session.adminReturnScreen || 'screen-badge')">← Back</button>
+    <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:4px;">
+      <div class="page-title">Admin</div>
+      <span style="font-size:11px;background:var(--amber-bg);color:var(--amber);border:1px solid var(--amber-border);padding:3px 10px;border-radius:20px;font-weight:600;">Supervisor</span>
+    </div>
+    <div class="page-sub">Manage operators, lines and PIN</div>
+
+    <div class="section-head">Operators</div>
+    <div class="add-form" id="add-op-form" style="display:none">
+      <div class="add-form-title">➕ Add operator</div>
+      <div class="field-label">Full name</div>
+      <div class="inline-row">
+        <input type="text" id="new-op-name" placeholder="e.g. Tom Bradley" />
+        <button class="btn btn-primary" onclick="addOperator()">Add</button>
+      </div>
+      <div class="field-label" style="margin-top:10px;">Role / line assignment</div>
+      <input type="text" id="new-op-role" placeholder="e.g. Operator · Ham lines" />
+    </div>
+    <button class="btn btn-ghost btn-sm" style="margin-bottom:10px;width:auto;" onclick="toggleAddOp()">+ Add operator</button>
+    <div id="admin-operator-list"></div>
+
+    <div class="section-head">Slicing lines</div>
+    <div class="add-form" id="add-line-form" style="display:none">
+      <div class="add-form-title">➕ Add line</div>
+      <div class="field-label">Line name</div>
+      <div class="inline-row">
+        <input type="text" id="new-line-name" placeholder="e.g. Ham Line 4" />
+        <button class="btn btn-primary" onclick="addLine()">Add</button>
+      </div>
+      <div style="display:flex;gap:8px;margin-top:10px;">
+        <button class="btn btn-ghost btn-sm" onclick="setNewLineType('ham')" id="type-ham" style="flex:1;border-color:var(--accent);color:var(--accent);">🐷 Ham</button>
+        <button class="btn btn-ghost btn-sm" onclick="setNewLineType('bacon')" id="type-bacon" style="flex:1;">🥓 Bacon</button>
+      </div>
+    </div>
+    <button class="btn btn-ghost btn-sm" style="margin-bottom:10px;width:auto;" onclick="toggleAddLine()">+ Add line</button>
+    <div id="admin-line-list"></div>
+
+    <div class="section-head">Security</div>
+    <div class="add-form">
+      <div class="add-form-title">🔑 Change supervisor PIN</div>
+      <div class="field-label">New PIN (4 digits)</div>
+      <div class="inline-row">
+        <input type="password" id="new-pin-input" placeholder="••••" maxlength="4" inputmode="numeric" />
+        <button class="btn btn-amber btn-sm" onclick="changePin()">Save</button>
+      </div>
+    </div>
+    <div style="height:20px;"></div>
+  </div>
+
+  <!-- Nav -->
+  <nav class="nav">
+    <button class="nav-btn active" id="nav-home" onclick="navTo('screen-home','nav-home')">
+      <svg viewBox="0 0 24 24"><path d="M3 12L12 3l9 9"/><path d="M9 21V12h6v9"/><path d="M3 12v9h18V12"/></svg>Home
+    </button>
+    <button class="nav-btn" id="nav-downtime" onclick="startDowntime()">
+      <svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="9"/><path d="M12 7v5l3 3"/><path d="M12 3v2M21 12h-2M12 21v-2M3 12h2"/></svg>Downtime
+    </button>
+    <button class="nav-btn" id="nav-log" onclick="navTo('screen-log','nav-log')">
+      <svg viewBox="0 0 24 24"><path d="M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2"/><rect x="9" y="3" width="6" height="4" rx="1"/><path d="M9 12h6M9 16h4"/></svg>Log
+    </button>
+    <button class="nav-btn" id="nav-admin" onclick="openAdmin()">
+      <svg viewBox="0 0 24 24"><circle cx="12" cy="8" r="4"/><path d="M20 21a8 8 0 10-16 0"/><path d="M17 11l1.5 1.5L22 9"/></svg>Admin
+    </button>
+  </nav>
+</div>
+<div class="toast" id="toast"></div>
+
+<script>
+// ── Data ──
+const DOWNTIME_CODES = [
+  {code:1,  name:'Break',                category:'planned',     short:'Break'},
+  {code:5,  name:'Film/Web Changeover',  category:'planned',     short:'Film changeover'},
+  {code:6,  name:'Product Changeover',   category:'planned',     short:'Product changeover'},
+  {code:7,  name:'Equipment Changeover', category:'planned',     short:'Equip. changeover'},
+  {code:9,  name:'Planned Service',      category:'planned',     short:'Planned service'},
+  {code:10, name:'Trial',                category:'planned',     short:'Trial'},
+  {code:11, name:'Meeting / Training',   category:'planned',     short:'Meeting / training'},
+  {code:4,  name:'Wash Down',            category:'planned',     short:'Wash down'},
+  {code:3,  name:'Relieving',            category:'planned',     short:'Relieving'},
+  {code:2,  name:'Equipment Breakdown',  category:'unplanned',   short:'Equip. breakdown'},
+  {code:8,  name:'Waiting',              category:'unplanned',   short:'Waiting'},
+  {code:12, name:'Repack Underweights',  category:'quality',     short:'Repack underwt.'},
+  {code:13, name:'Repack Faulty Packs',  category:'quality',     short:'Repack faulty'},
+  {code:14, name:'Line Start / Stopped', category:'operational', short:'Line start/stop'},
+];
+
+function loadState() { try { const s=localStorage.getItem('slicer_v2'); return s?JSON.parse(s):null; } catch(e){return null;} }
+function saveState() { try { localStorage.setItem('slicer_v2', JSON.stringify(appState)); } catch(e){} }
+
+let appState = loadState() || {
+  operators: [
+    {name:'Sarah Thompson', initials:'ST', role:'Operator · Ham lines'},
+    {name:'James Kowalski', initials:'JK', role:'Operator · Bacon lines'},
+    {name:'Mia Nguyen',     initials:'MN', role:'Senior operator · All lines'},
+  ],
+  lines: { ham:['Ham Line 1','Ham Line 2','Ham Line 3'], bacon:['Bacon Line A','Bacon Line B','Bacon Line C'] },
+  pin: '1234',
+  events: [],
+};
+
+// Clock state: null = not set, else {h, m}
+let clockStop    = {h: null, m: null};
+let clockRestart = {h: null, m: null};
+
+let session = {
+  operator: null, line: null, shift: null,
+  selectedReason: null, selectedLine: null,
+  pinBuffer: '', newLineType: 'ham',
+};
+
+// ── Init ──
+function init() {
+  const now = new Date();
+  const h = now.getHours();
+  document.getElementById('greeting-time').textContent = h<12?'morning':h<17?'afternoon':'evening';
+  document.getElementById('scan-date').textContent = now.toLocaleDateString('en-AU',{weekday:'long',day:'numeric',month:'long',year:'numeric'});
+  const shiftName = h>=6&&h<14?'Morning':h>=14&&h<22?'Afternoon':'Night';
+  const shiftTime = h>=6&&h<14?'06:00–14:00':h>=14&&h<22?'14:00–22:00':'22:00–06:00';
+  session.shift = shiftName + '  ' + shiftTime;
+  document.getElementById('shift-badge').textContent = shiftName;
+  buildReasonGrids();
+  buildOperatorList();
+  buildLineLists();
+  renderClocks();
+  updateDash();
+  updateLog();
+}
+
+// ── Clock logic ──
+function adjustTime(which, unit, delta) {
+  let clk = which === 'stop' ? clockStop : clockRestart;
+  // Initialise from current time if not yet set
+  if (clk.h === null) {
+    const now = new Date();
+    clk.h = now.getHours();
+    clk.m = now.getMinutes();
+  }
+  if (unit === 'h') clk.h = (clk.h + delta + 24) % 24;
+  if (unit === 'm') clk.m = (clk.m + delta + 60) % 60;
+  renderClocks();
+}
+
+function renderClocks() {
+  // Stop
+  const sh = clockStop.h, sm = clockStop.m;
+  document.getElementById('stop-h').textContent  = sh !== null ? String(sh).padStart(2,'0') : '--';
+  document.getElementById('stop-m').textContent  = sm !== null ? String(sm).padStart(2,'0') : '--';
+  document.getElementById('stop-sub').textContent = sh !== null
+    ? `${String(sh).padStart(2,'0')}:${String(sm).padStart(2,'0')}`
+    : 'Tap ▲▼ to set time';
+
+  // Restart
+  const rh = clockRestart.h, rm = clockRestart.m;
+  document.getElementById('restart-h').textContent = rh !== null ? String(rh).padStart(2,'0') : '--';
+  document.getElementById('restart-m').textContent = rm !== null ? String(rm).padStart(2,'0') : '--';
+  document.getElementById('restart-sub').textContent = rh !== null
+    ? `${String(rh).padStart(2,'0')}:${String(rm).padStart(2,'0')}`
+    : 'Tap ▲▼ to set time';
+
+  // Duration
+  const durEl = document.getElementById('duration-value');
+  if (sh !== null && rh !== null) {
+    const stopMins    = sh * 60 + sm;
+    const restartMins = rh * 60 + rm;
+    let diff = restartMins - stopMins;
+    if (diff < 0) diff += 1440; // crosses midnight
+    const hrs = Math.floor(diff / 60);
+    const mins = diff % 60;
+    durEl.textContent = hrs > 0 ? `${hrs}h ${mins}m` : `${mins} min`;
+    durEl.style.color = diff > 0 ? 'var(--amber)' : 'var(--red)';
+  } else {
+    durEl.textContent = '— min';
+    durEl.style.color = 'var(--amber)';
+  }
+
+  checkResolveBtn();
+}
+
+function checkResolveBtn() {
+  const ready = clockStop.h !== null && clockRestart.h !== null && session.selectedReason !== null;
+  document.getElementById('resolve-btn').disabled = !ready;
+}
+
+// ── Reason grids ──
+function buildReasonGrids() {
+  const groups = {planned:[],unplanned:[],quality:[],operational:[]};
+  DOWNTIME_CODES.forEach(c => groups[c.category].push(c));
+  Object.entries(groups).forEach(([cat, codes]) => {
+    const el = document.getElementById('reason-'+cat);
+    if (!el) return;
+    el.innerHTML = '';
+    codes.forEach(c => {
+      const btn = document.createElement('div');
+      btn.className = 'reason-btn';
+      btn.innerHTML = `<span class="code-badge">${c.code}</span>${c.short}`;
+      btn.onclick = () => selectReason(btn, c);
+      el.appendChild(btn);
+    });
+  });
+}
+
+// ── Operator / line lists ──
+function buildOperatorList() {
+  const el = document.getElementById('operator-list');
+  el.innerHTML = '';
+  appState.operators.forEach(op => {
+    const div = document.createElement('div');
+    div.className = 'list-option';
+    div.innerHTML = `<div><div class="list-option-name">${op.name}</div><div class="list-option-sub">${op.role}</div></div><div class="list-check">✓</div>`;
+    div.onclick = () => { document.querySelectorAll('#operator-list .list-option').forEach(o=>o.classList.remove('selected')); div.classList.add('selected'); setOperator(op.name, op.initials); };
+    el.appendChild(div);
+  });
+}
+
+function buildLineLists() {
+  ['ham','bacon'].forEach(type => {
+    const el = document.getElementById('line-list-'+type);
+    if (!el) return;
+    el.innerHTML = '';
+    (appState.lines[type]||[]).forEach(name => {
+      const div = document.createElement('div');
+      div.className = 'list-option';
+      div.innerHTML = `<div><div class="list-option-name">${name}</div><div class="list-option-sub">${type==='ham'?'Ham slicing':'Bacon slicing'}</div></div><div class="list-check">✓</div>`;
+      div.onclick = () => selectLine(div, name);
+      el.appendChild(div);
+    });
+  });
+}
+
+// ── Screen nav ──
+function goTo(id) {
+  document.querySelectorAll('.screen').forEach(s=>s.classList.remove('active'));
+  document.getElementById(id).classList.add('active');
+}
+function navTo(screenId, navId) {
+  if (screenId === 'screen-pin' || screenId === 'screen-admin') {
+    goTo(screenId);
+    document.querySelectorAll('.nav-btn').forEach(b=>b.classList.remove('active'));
+    document.getElementById(navId).classList.add('active');
+    return;
+  }
+  if (!session.operator) { showToast('Scan your badge first'); goTo('screen-badge'); return; }
+  if (!session.line && screenId!=='screen-badge') { showToast('Select a line first'); goTo('screen-line'); return; }
+  goTo(screenId);
+  document.querySelectorAll('.nav-btn').forEach(b=>b.classList.remove('active'));
+  document.getElementById(navId).classList.add('active');
+}
+
+// End session — back to Screen 1, full reset
+function endSession() {
+  session.operator = null; session.line = null; session.selectedReason = null; session.selectedLine = null;
+  document.getElementById('header-title').textContent = 'Slicing Downtime';
+  document.getElementById('header-sub').textContent = 'Scan to begin';
+  // reset badge scan zone
+  const zone = document.getElementById('qr-badge-zone');
+  zone.className = 'qr-zone';
+  zone.innerHTML = '<div class="scan-line"></div><div style="font-size:52px;">🪪</div><div class="qr-label">Tap to scan your operator badge</div><div class="qr-sublabel">Hold QR code in front of camera</div>';
+  document.getElementById('manual-name-entry').style.display = 'none';
+  document.getElementById('manual-name-input').value = '';
+  document.querySelectorAll('#operator-list .list-option').forEach(o=>o.classList.remove('selected'));
+  goTo('screen-badge');
+  document.querySelectorAll('.nav-btn').forEach(b=>b.classList.remove('active'));
+  document.getElementById('nav-home').classList.add('active');
+  showToast('Session ended');
+}
+
+// ── Badge scan ──
+function simulateBadgeScan() {
+  const zone = document.getElementById('qr-badge-zone');
+  zone.className = 'qr-zone scanning';
+  zone.innerHTML = '<div class="scan-line"></div><div style="font-size:52px;">🔍</div><div class="qr-label">Scanning…</div>';
+  setTimeout(() => {
+    const known = Math.random() > 0.2;
+    if (known) {
+      const op = appState.operators[Math.floor(Math.random()*appState.operators.length)];
+      zone.className = 'qr-zone success';
+      zone.innerHTML = `<div style="font-size:52px;">✅</div><div class="qr-label" style="color:var(--green);">Badge recognised</div><div class="qr-sublabel" style="color:var(--green);">${op.name}</div>`;
+      setTimeout(() => setOperator(op.name, op.initials), 700);
+    } else {
+      zone.className = 'qr-zone error';
+      zone.innerHTML = `<div style="font-size:52px;">❓</div><div class="qr-label" style="color:var(--amber);">Badge not recognised</div>`;
+      document.getElementById('manual-name-entry').style.display = 'block';
+    }
+  }, 1800);
+}
+function confirmManualName() {
+  const val = document.getElementById('manual-name-input').value.trim();
+  if (!val) return;
+  const initials = val.split(' ').map(w=>w[0]).join('').toUpperCase().slice(0,2);
+  setOperator(val, initials);
+}
+function setOperator(name, initials) {
+  session.operator = {name, initials};
+  document.getElementById('op-avatar-line').textContent = initials;
+  document.getElementById('op-name-line').textContent = name;
+  document.getElementById('header-sub').textContent = name;
+  setTimeout(() => goTo('screen-line'), 200);
+}
+
+// ── Line scan ──
+function simulateLineScan() {
+  const zone = document.getElementById('qr-line-zone');
+  zone.className = 'qr-zone scanning';
+  zone.innerHTML = '<div class="scan-line"></div><div style="font-size:52px;">🔍</div><div class="qr-label">Scanning…</div>';
+  setTimeout(() => {
+    const all = [...(appState.lines.ham||[]),...(appState.lines.bacon||[])];
+    if (!all.length) { zone.className='qr-zone error'; zone.innerHTML='<div style="font-size:52px;">❌</div><div class="qr-label">No lines configured</div>'; return; }
+    const picked = all[Math.floor(Math.random()*all.length)];
+    zone.className = 'qr-zone success';
+    zone.innerHTML = `<div style="font-size:52px;">✅</div><div class="qr-label" style="color:var(--green);">Line identified</div><div class="qr-sublabel" style="color:var(--green);">${picked}</div>`;
+    session.selectedLine = picked;
+    document.getElementById('confirm-line-btn').removeAttribute('disabled');
+    document.querySelectorAll('#line-list-ham .list-option,#line-list-bacon .list-option').forEach(o=>{
+      o.classList.toggle('selected', o.querySelector('.list-option-name').textContent===picked);
+    });
+  }, 1800);
+}
+function selectLine(el, name) {
+  document.querySelectorAll('#line-list-ham .list-option,#line-list-bacon .list-option').forEach(o=>o.classList.remove('selected'));
+  el.classList.add('selected');
+  session.selectedLine = name;
+  document.getElementById('confirm-line-btn').removeAttribute('disabled');
+}
+function confirmLine() {
+  if (!session.selectedLine) return;
+  session.line = session.selectedLine;
+  document.getElementById('header-title').textContent = session.line;
+  document.getElementById('header-sub').textContent = session.operator.name;
+  document.getElementById('dash-line-name').textContent = session.line;
+  document.getElementById('dash-line-status').textContent = session.operator.name + ' · ' + session.shift.split('  ')[0] + ' shift';
+  document.getElementById('log-sub').textContent = session.line + ' · ' + session.shift.split('  ')[0] + ' shift';
+  updateDash();
+  goTo('screen-home');
+  document.querySelectorAll('.nav-btn').forEach(b=>b.classList.remove('active'));
+  document.getElementById('nav-home').classList.add('active');
+  showToast('Line set: ' + session.line);
+}
+
+// ── Downtime ──
+function startDowntime() {
+  if (!session.operator) { showToast('Scan your badge first'); goTo('screen-badge'); return; }
+  if (!session.line) { showToast('Select a line first'); goTo('screen-line'); return; }
+  // Reset clocks and form
+  clockStop    = {h:null, m:null};
+  clockRestart = {h:null, m:null};
+  session.selectedReason = null;
+  document.getElementById('downtime-notes').value = '';
+  document.querySelectorAll('.reason-btn').forEach(b=>b.classList.remove('selected','unplanned','quality','operational'));
+  renderClocks();
+  goTo('screen-downtime');
+  document.querySelectorAll('.nav-btn').forEach(b=>b.classList.remove('active'));
+  document.getElementById('nav-downtime').classList.add('active');
+  const sb = document.getElementById('line-status-badge');
+  sb.className = 'status status-down';
+  sb.innerHTML = '<span class="dot"></span> Down';
+}
+
+function selectReason(btn, code) {
+  document.querySelectorAll('.reason-btn').forEach(b=>b.classList.remove('selected','unplanned','quality','operational'));
+  btn.classList.add('selected');
+  if (code.category!=='planned') btn.classList.add(code.category);
+  session.selectedReason = code;
+  checkResolveBtn();
+}
+
+function resolveDowntime() {
+  if (!session.selectedReason || clockStop.h===null || clockRestart.h===null) return;
+  const stopMins    = clockStop.h * 60 + clockStop.m;
+  const restartMins = clockRestart.h * 60 + clockRestart.m;
+  let diff = restartMins - stopMins;
+  if (diff < 0) diff += 1440;
+  const hrs = Math.floor(diff/60), mins = diff%60;
+  const durationStr = hrs>0 ? `${hrs}h ${mins}m` : `${mins}m`;
+  const stopStr    = `${String(clockStop.h).padStart(2,'0')}:${String(clockStop.m).padStart(2,'0')}`;
+  const restartStr = `${String(clockRestart.h).padStart(2,'0')}:${String(clockRestart.m).padStart(2,'0')}`;
+  const ev = {
+    code: session.selectedReason.code,
+    name: session.selectedReason.name,
+    category: session.selectedReason.category,
+    stopTime: stopStr,
+    restartTime: restartStr,
+    duration: durationStr,
+    durationMins: diff,
+    operator: session.operator.name,
+    line: session.line,
+    shift: session.shift.split('  ')[0],
+    notes: document.getElementById('downtime-notes').value.trim(),
+    ts: Date.now(),
+  };
+  appState.events.unshift(ev);
+  saveState();
+  updateDash();
+  updateLog();
+  syncEvent(ev);
+  const sb = document.getElementById('line-status-badge');
+  sb.className = 'status status-running';
+  sb.innerHTML = '<span class="dot"></span> Running';
+  showToast(`✓ Saved: ${ev.name} — ${ev.duration}`);
+  goTo('screen-home');
+  document.querySelectorAll('.nav-btn').forEach(b=>b.classList.remove('active'));
+  document.getElementById('nav-home').classList.add('active');
+}
+
+// ── Dashboard ──
+function updateDash() {
+  const lineEvents = appState.events.filter(e=>e.line===session.line);
+  document.getElementById('stat-events').textContent = lineEvents.length;
+  const totalMins = lineEvents.reduce((a,e)=>a+e.durationMins,0);
+  const h = Math.floor(totalMins/60), m = totalMins%60;
+  document.getElementById('stat-total').textContent = h>0?`${h}h ${m}m`:(totalMins>0?totalMins+'m':'0m');
+  document.getElementById('stat-last').textContent = lineEvents.length ? lineEvents[0].stopTime : '—';
+  const list = document.getElementById('dash-log-list');
+  if (!lineEvents.length) {
+    list.innerHTML='<div class="empty"><div class="empty-icon">✅</div><div class="empty-title">No downtime events yet</div><div class="empty-sub">Tap "Log downtime now" when the line stops</div></div>';
+    return;
+  }
+  list.innerHTML = lineEvents.slice(0,5).map(logEntryHTML).join('');
+}
+function updateLog() {
+  const list = document.getElementById('full-log-list');
+  if (!appState.events.length) {
+    list.innerHTML='<div class="empty"><div class="empty-icon">📋</div><div class="empty-title">No events yet</div><div class="empty-sub">Events will appear here as they\'re logged</div></div>';
+    return;
+  }
+  list.innerHTML = appState.events.map(logEntryHTML).join('');
+}
+function logEntryHTML(e) {
+  return `<div class="log-entry">
+    <div class="log-dot ${e.category}"></div>
+    <div style="flex:1">
+      <div class="log-name"><span class="code-badge">${e.code}</span>${e.name}</div>
+      <div class="log-meta">${e.stopTime} → ${e.restartTime} · ${e.operator} · ${e.line||''}</div>
+      ${e.notes?`<div class="log-notes">${e.notes}</div>`:''}
+    </div>
+    <div class="log-duration">${e.duration}</div>
+  </div>`;
+}
+
+// ── Export ──
+function exportLog() {
+  if (!appState.events.length) { showToast('No events to export'); return; }
+  const rows=[['Code','Name','Category','Line stopped','Line restarted','Duration (min)','Duration','Operator','Line','Shift','Notes']];
+  appState.events.forEach(e=>rows.push([e.code,e.name,e.category,e.stopTime,e.restartTime,e.durationMins,e.duration,e.operator,e.line,e.shift,e.notes]));
+  const csv=rows.map(r=>r.map(v=>`"${String(v||'').replace(/"/g,'""')}"`).join(',')).join('\n');
+  const a=document.createElement('a');
+  a.href='data:text/csv;charset=utf-8,'+encodeURIComponent(csv);
+  a.download=`downtime-${new Date().toISOString().slice(0,10)}.csv`;
+  a.click();
+  showToast('CSV exported');
+}
+
+// ── PIN ──
+function openAdmin() {
+  session.pinBuffer=''; updatePinDisplay();
+  document.getElementById('pin-error').textContent='';
+  // store where to go back to after admin
+  session.adminReturnScreen = session.operator ? 'screen-home' : 'screen-badge';
+  goTo('screen-pin');
+  document.querySelectorAll('.nav-btn').forEach(b=>b.classList.remove('active'));
+  document.getElementById('nav-admin').classList.add('active');
+}
+function pinKey(k) {
+  if (session.pinBuffer.length>=4) return;
+  session.pinBuffer+=k; updatePinDisplay();
+  if (session.pinBuffer.length===4) {
+    setTimeout(()=>{
+      if (session.pinBuffer===appState.pin) { session.pinBuffer=''; updatePinDisplay(); buildAdminLists(); goTo('screen-admin'); }
+      else { document.getElementById('pin-error').textContent='Incorrect PIN. Try again.'; setTimeout(()=>{ session.pinBuffer=''; updatePinDisplay(); document.getElementById('pin-error').textContent=''; },800); }
+    },200);
+  }
+}
+function pinDel() { session.pinBuffer=session.pinBuffer.slice(0,-1); updatePinDisplay(); }
+function pinClear() { session.pinBuffer=''; updatePinDisplay(); }
+function updatePinDisplay() { for(let i=0;i<4;i++) document.getElementById('pd'+i).classList.toggle('filled',i<session.pinBuffer.length); }
+function changePin() {
+  const val=document.getElementById('new-pin-input').value.trim();
+  if (!/^\d{4}$/.test(val)) { showToast('PIN must be 4 digits'); return; }
+  appState.pin=val; saveState();
+  document.getElementById('new-pin-input').value='';
+  showToast('✓ PIN updated');
+}
+
+// ── Admin: operators / lines ──
+function buildAdminLists() {
+  const opEl=document.getElementById('admin-operator-list');
+  opEl.innerHTML='';
+  appState.operators.forEach((op,i)=>{
+    const div=document.createElement('div'); div.className='admin-item';
+    div.innerHTML=`<div><div class="admin-item-name">${op.name}</div><div class="admin-item-sub">${op.role}</div></div><div><button class="icon-btn" onclick="removeOperator(${i})">🗑</button></div>`;
+    opEl.appendChild(div);
+  });
+  const lineEl=document.getElementById('admin-line-list');
+  lineEl.innerHTML='';
+  ['ham','bacon'].forEach(type=>{
+    (appState.lines[type]||[]).forEach((name,i)=>{
+      const div=document.createElement('div'); div.className='admin-item';
+      div.innerHTML=`<div><div class="admin-item-name">${name}</div><div class="admin-item-sub">${type==='ham'?'Ham':'Bacon'} slicing</div></div><div><button class="icon-btn" onclick="removeLine('${type}',${i})">🗑</button></div>`;
+      lineEl.appendChild(div);
+    });
+  });
+}
+function toggleAddOp() { const f=document.getElementById('add-op-form'); f.style.display=f.style.display==='none'?'block':'none'; }
+function addOperator() {
+  const name=document.getElementById('new-op-name').value.trim();
+  const role=document.getElementById('new-op-role').value.trim()||'Operator';
+  if (!name) { showToast('Enter a name'); return; }
+  const initials=name.split(' ').map(w=>w[0]).join('').toUpperCase().slice(0,2);
+  appState.operators.push({name,initials,role}); saveState();
+  document.getElementById('new-op-name').value=''; document.getElementById('new-op-role').value='';
+  document.getElementById('add-op-form').style.display='none';
+  buildAdminLists(); buildOperatorList(); showToast('✓ Added: '+name);
+}
+function removeOperator(i) { const n=appState.operators[i].name; appState.operators.splice(i,1); saveState(); buildAdminLists(); buildOperatorList(); showToast('Removed: '+n); }
+function toggleAddLine() { const f=document.getElementById('add-line-form'); f.style.display=f.style.display==='none'?'block':'none'; }
+function setNewLineType(type) {
+  session.newLineType=type;
+  document.getElementById('type-ham').style.borderColor=type==='ham'?'var(--accent)':'';
+  document.getElementById('type-ham').style.color=type==='ham'?'var(--accent)':'';
+  document.getElementById('type-bacon').style.borderColor=type==='bacon'?'var(--amber)':'';
+  document.getElementById('type-bacon').style.color=type==='bacon'?'var(--amber)':'';
+}
+function addLine() {
+  const name=document.getElementById('new-line-name').value.trim();
+  if (!name) { showToast('Enter a line name'); return; }
+  if (!appState.lines[session.newLineType]) appState.lines[session.newLineType]=[];
+  appState.lines[session.newLineType].push(name); saveState();
+  document.getElementById('new-line-name').value='';
+  document.getElementById('add-line-form').style.display='none';
+  buildAdminLists(); buildLineLists(); showToast('✓ Added: '+name);
+}
+function removeLine(type,i) { const n=appState.lines[type][i]; appState.lines[type].splice(i,1); saveState(); buildAdminLists(); buildLineLists(); showToast('Removed: '+n); }
+
+// ── Toast ──
+function showToast(msg, isError) {
+  const t=document.getElementById('toast');
+  t.textContent=msg; t.className='toast'+(isError?' error':''); t.classList.add('show');
+  setTimeout(()=>t.classList.remove('show'),2500);
+}
+
+init();
+
+// ══════════════════════════════════════════════
+// POWER AUTOMATE WEBHOOK SYNC
+// ══════════════════════════════════════════════
+
+// ── CONFIGURE THIS — paste your Power Automate webhook URL below ──
+const AZURE_FUNCTION_URL = "https://default1a30fad6bc1b45aa850d93391c7f0d.59.environment.api.powerplatform.com:443/powerautomate/automations/direct/workflows/22fdf55a18b54d72b96a19dc2cac2311/triggers/manual/paths/invoke?api-version=1";
+// Example: "https://prod-12.australiasoutheast.logic.azure.com:443/workflows/abc123.../triggers/manual/paths/invoke?api-version=2016-06-01&sp=..."
+// You get this URL from Power Automate after creating your flow (see setup guide)
+
+const SYNC_ENABLED = AZURE_FUNCTION_URL !== "https://default1a30fad6bc1b45aa850d93391c7f0d.59.environment.api.powerplatform.com:443/powerautomate/automations/direct/workflows/22fdf55a18b54d72b96a19dc2cac2311/triggers/manual/paths/invoke?api-version=1";
+
+// Sync queue — events that haven't been sent yet
+// Stored in localStorage so nothing is lost if the tablet goes offline
+function loadQueue() {
+  try { const q = localStorage.getItem('sync_queue'); return q ? JSON.parse(q) : []; }
+  catch(e) { return []; }
+}
+function saveQueue(q) {
+  try { localStorage.setItem('sync_queue', JSON.stringify(q)); } catch(e) {}
+}
+
+async function syncEvent(event) {
+  if (!SYNC_ENABLED) {
+    showSyncStatus('offline');
+    return;
+  }
+  showSyncStatus('syncing');
+  try {
+    const res = await fetch(AZURE_FUNCTION_URL, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(event),
+    });
+    if (!res.ok) throw new Error('HTTP ' + res.status);
+    showSyncStatus('success');
+    // Flush any queued events now we're online
+    flushQueue();
+  } catch(err) {
+    // Add to retry queue
+    const q = loadQueue();
+    q.push(event);
+    saveQueue(q);
+    showSyncStatus('queued');
+  }
+}
+
+async function flushQueue() {
+  const q = loadQueue();
+  if (!q.length) return;
+  const failed = [];
+  for (const ev of q) {
+    try {
+      const res = await fetch(AZURE_FUNCTION_URL, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(ev),
+      });
+      if (!res.ok) throw new Error('HTTP ' + res.status);
+    } catch(e) {
+      failed.push(ev);
+    }
+  }
+  saveQueue(failed);
+  if (failed.length === 0 && q.length > 0) showToast('✓ ' + q.length + ' queued event(s) synced to Excel');
+}
+
+// Sync status indicator in header
+function showSyncStatus(state) {
+  let el = document.getElementById('sync-indicator');
+  if (!el) {
+    el = document.createElement('div');
+    el.id = 'sync-indicator';
+    el.style.cssText = 'font-size:11px;font-weight:600;padding:3px 9px;border-radius:20px;transition:all 0.3s;margin-right:6px;';
+    const hdr = document.getElementById('shift-badge');
+    hdr.parentNode.insertBefore(el, hdr);
+  }
+  const states = {
+    syncing: { text: '⟳ Syncing…',   bg: 'rgba(79,127,255,0.15)',  color: '#4f7fff' },
+    success: { text: '✓ Synced',      bg: 'rgba(61,214,140,0.15)',  color: '#3dd68c' },
+    queued:  { text: '⚠ Queued',      bg: 'rgba(245,158,11,0.15)',  color: '#f59e0b' },
+    offline: { text: '○ Local only',  bg: 'rgba(90,98,128,0.15)',   color: '#5a6280' },
+  };
+  const s = states[state] || states.offline;
+  el.textContent = s.text;
+  el.style.background = s.bg;
+  el.style.color = s.color;
+  if (state === 'success') setTimeout(() => { if (el) el.style.opacity = '0'; }, 3000);
+  else el.style.opacity = '1';
+}
+
+// Try to flush queue on load and when coming back online
+window.addEventListener('online', flushQueue);
+setTimeout(flushQueue, 2000);
+</script>
+</body>
+</html>
