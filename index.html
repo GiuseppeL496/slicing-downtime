@@ -822,7 +822,9 @@ function resolveDowntime() {
   const durationStr = hrs>0 ? `${hrs}h ${mins}m` : `${mins}m`;
   const stopStr    = `${String(clockStop.h).padStart(2,'0')}:${String(clockStop.m).padStart(2,'0')}`;
   const restartStr = `${String(clockRestart.h).padStart(2,'0')}:${String(clockRestart.m).padStart(2,'0')}`;
+  const today = new Date().toLocaleDateString('en-AU');
   const ev = {
+    date: today,
     code: session.selectedReason.code,
     name: session.selectedReason.name,
     category: session.selectedReason.category,
@@ -993,11 +995,11 @@ init();
 // ══════════════════════════════════════════════
 
 // ── CONFIGURE THIS — paste your Power Automate webhook URL below ──
-const AZURE_FUNCTION_URL = "https://default1a30fad6bc1b45aa850d93391c7f0d.59.environment.api.powerplatform.com:443/powerautomate/automations/direct/workflows/22fdf55a18b54d72b96a19dc2cac2311/triggers/manual/paths/invoke?api-version=1";
+const AZURE_FUNCTION_URL = "YOUR_POWER_AUTOMATE_WEBHOOK_URL_HERE";
 // Example: "https://prod-12.australiasoutheast.logic.azure.com:443/workflows/abc123.../triggers/manual/paths/invoke?api-version=2016-06-01&sp=..."
 // You get this URL from Power Automate after creating your flow (see setup guide)
 
-const SYNC_ENABLED = AZURE_FUNCTION_URL !== "https://default1a30fad6bc1b45aa850d93391c7f0d.59.environment.api.powerplatform.com:443/powerautomate/automations/direct/workflows/22fdf55a18b54d72b96a19dc2cac2311/triggers/manual/paths/invoke?api-version=1";
+const SYNC_ENABLED = AZURE_FUNCTION_URL.startsWith('https://');
 
 // Sync queue — events that haven't been sent yet
 // Stored in localStorage so nothing is lost if the tablet goes offline
